@@ -4,11 +4,28 @@ const path = require("path");
 const crypto = require("crypto");
 
 const app = express();
+const http = require("http").Server(app);
+const io = require("socket.io")(http);
+
 const port = 3000;
 
 const keyPath = path.join(__dirname, "secret.key");
 
+let connectedClients = [];
+
 app.use(express.json());
+
+//Whenever someone connects this gets executed
+io.on("connection", function (socket) {
+  connectedClients.push(socket);
+  console.log(`User connected (${socket.id})`);
+
+  //Whenever someone disconnects this piece of code executed
+  socket.on("disconnect", function () {
+    connectedClients = connectedClients.filter(s => s.id !== socket.id);
+    console.log(`User disconnected (${socket.id})`);
+  });
+});
 
 // Get server status
 app.get("/", (req, res) => {
@@ -27,6 +44,14 @@ app.get("/message", (req, res) => {
   if (clientKey !== serverKey) {
     return res.status(403).json({ error: "Invalid API key" });
   }
+
+  const sinceParam = req.query.since;
+  const since = sinceParam ? parseInt(sinceParam, 10) : null;
+  
+  if (sinceParam && isNaN(since)) {
+    return res.status(400).json({ error: "Invalid timestamp" });
+  }
+
   // Read message
   fs.readFile("messages.json", "utf8", (err, data) => {
     if (err) {
@@ -36,7 +61,11 @@ app.get("/message", (req, res) => {
 
     try {
       const messages = JSON.parse(data);
-      res.json(messages);
+      const filteredMessages = since
+        ? messages.filter(msg => msg.timestamp > since)
+        : messages;
+
+      res.json(filteredMessages);
     } catch (parseErr) {
       console.error("Error parsing JSON:", parseErr);
       res.status(500).json({ error: "Invalid JSON format" });
@@ -68,34 +97,39 @@ app.post("/message/send", (req, res) => {
     return res.status(400).json({ error: "Invalid level" });
   }
 
+
+
   // Write data
   fs.readFile("messages.json", "utf8", (err, data) => {
-    let messageData = null;
+    let messages = [];
     if (!err && data) {
       try {
-        messageData = JSON.parse(data);
+        messages = JSON.parse(data);
       } catch (parseErr) {
         console.error("Error parsing messages.json:", parseErr);
         return res.status(500).json({ error: "Invalid messages file format" });
       }
     }
-    messageData.count += 1;
 
     const newMessage = {
       level,
       title,
       content,
-      messageID: messageData.count,
       timestamp: Date.now(),
+      nonce: crypto.randomInt(0, 65536)
     };
 
-    console.log("Message received")
+    console.log("Message received");
+    connectedClients.forEach(socket => {
+      socket.emit('new-message', newMessage);
+    });
 
-    messageData.messages.push(newMessage);
+
+    messages.push(newMessage);
 
     fs.writeFile(
       "./messages.json",
-      JSON.stringify(messageData, null, 2),
+      JSON.stringify(messages, null, 2),
       (writeErr) => {
         if (writeErr) {
           console.error("Error writing to messages.json:", writeErr);
@@ -120,60 +154,67 @@ app.post("/message/delete", (req, res) => {
     return res.status(403).json({ error: "Invalid API key" });
   }
 
-  // Get message
-  const { messageIDToRemove, timestampToRemove } = req.body;
+  // Get message info
+  const {timestampToRemove, messageNonceToRemove} = req.body;
 
-  if (messageIDToRemove === undefined || timestampToRemove === undefined) {
+  if (messageNonceToRemove === undefined || timestampToRemove === undefined) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   if (
-    !Number.isInteger(messageIDToRemove) ||
+    !Number.isInteger(messageNonceToRemove) ||
     !Number.isInteger(timestampToRemove)
   ) {
     return res.status(400).json({ error: "Invalid data" });
   }
 
+  connectedClients.forEach(socket => {
+      socket.emit('new-message', newMessage);
+    });
+
   // Delete message
   fs.readFile("messages.json", "utf8", (err, data) => {
-    let messageData = null;
+    let messages = [];
 
     if (!err && data) {
       try {
-        messageData = JSON.parse(data);
-        messages = messageData.messages;
+        messages = JSON.parse(data);
       } catch (parseErr) {
         console.error("Error parsing messages.json:", parseErr);
         return res.status(500).json({ error: "Invalid messages file format" });
       }
     }
 
-    messageOriginalLength = messageData.messages.length;
-    if (messageIDToRemove == 0 && timestampToRemove == 0) {
-      messageData.messages = [];
+    messageOriginalLength = messages.length;
+    if (messageNonceToRemove == 0 && timestampToRemove == 0) {
+      messages = [];
     } else {
-      messageData.messages = messageData.messages.filter(
+      messages = messages.filter(
         (message) =>
           !(
-            message.messageID == messageIDToRemove &&
+            message.nonce == messageNonceToRemove &&
             message.timestamp == timestampToRemove
           )
       );
-      if (messageData.messages.length == messageOriginalLength){
+      if (messages.length == messageOriginalLength) {
         return res.status(400).json({ error: "Message not found" });
       }
     }
 
     fs.writeFile(
       "./messages.json",
-      JSON.stringify(messageData, null, 2),
+      JSON.stringify(messages, null, 2),
       (writeErr) => {
         if (writeErr) {
           console.error("Error writing to messages.json:", writeErr);
           return res.status(500).json({ error: "Failed to delete message" });
         }
 
-        console.log(`${messageOriginalLength - messageData.messages.length} message(s) deleted.`);
+        console.log(
+          `${
+            messageOriginalLength - messages.length
+          } message(s) deleted.`
+        );
         res.status(201).json({ message: "Message deleted successfully" });
       }
     );
