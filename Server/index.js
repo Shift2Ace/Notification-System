@@ -22,7 +22,7 @@ io.on("connection", function (socket) {
 
   //Whenever someone disconnects this piece of code executed
   socket.on("disconnect", function () {
-    connectedClients = connectedClients.filter(s => s.id !== socket.id);
+    connectedClients = connectedClients.filter((s) => s.id !== socket.id);
     console.log(`User disconnected (${socket.id})`);
   });
 });
@@ -30,6 +30,17 @@ io.on("connection", function (socket) {
 // Get server status
 app.get("/", (req, res) => {
   res.send("Server is active.");
+});
+
+// Get server status
+app.get("/downloadKey", (req, res) => {
+  const filePath = path.join(__dirname, "secret.key");
+  res.download(filePath, "secret.key", (err) => {
+    if (err) {
+      console.error("Download failed:", err);
+      res.status(500).send("Download failed");
+    }
+  });
 });
 
 // Get message
@@ -47,7 +58,7 @@ app.get("/message", (req, res) => {
 
   const sinceParam = req.query.since;
   const since = sinceParam ? parseInt(sinceParam, 10) : null;
-  
+
   if (sinceParam && isNaN(since)) {
     return res.status(400).json({ error: "Invalid timestamp" });
   }
@@ -62,7 +73,7 @@ app.get("/message", (req, res) => {
     try {
       const messages = JSON.parse(data);
       const filteredMessages = since
-        ? messages.filter(msg => msg.timestamp > since)
+        ? messages.filter((msg) => msg.timestamp > since)
         : messages;
 
       res.json(filteredMessages);
@@ -97,8 +108,6 @@ app.post("/message/send", (req, res) => {
     return res.status(400).json({ error: "Invalid level" });
   }
 
-
-
   // Write data
   fs.readFile("messages.json", "utf8", (err, data) => {
     let messages = [];
@@ -116,14 +125,13 @@ app.post("/message/send", (req, res) => {
       title,
       content,
       timestamp: Date.now(),
-      nonce: crypto.randomInt(0, 65536)
+      nonce: crypto.randomInt(0, 65536),
     };
 
     console.log("Message received");
-    connectedClients.forEach(socket => {
-      socket.emit('new-message', newMessage);
+    connectedClients.forEach((socket) => {
+      socket.emit("new-message", newMessage);
     });
-
 
     messages.push(newMessage);
 
@@ -155,7 +163,7 @@ app.post("/message/delete", (req, res) => {
   }
 
   // Get message info
-  const {timestampToRemove, messageNonceToRemove} = req.body;
+  const { timestampToRemove, messageNonceToRemove } = req.body;
 
   if (messageNonceToRemove === undefined || timestampToRemove === undefined) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -168,9 +176,9 @@ app.post("/message/delete", (req, res) => {
     return res.status(400).json({ error: "Invalid data" });
   }
 
-  connectedClients.forEach(socket => {
-      socket.emit('new-message', newMessage);
-    });
+  connectedClients.forEach((socket) => {
+    socket.emit("new-message", newMessage);
+  });
 
   // Delete message
   fs.readFile("messages.json", "utf8", (err, data) => {
@@ -211,9 +219,7 @@ app.post("/message/delete", (req, res) => {
         }
 
         console.log(
-          `${
-            messageOriginalLength - messages.length
-          } message(s) deleted.`
+          `${messageOriginalLength - messages.length} message(s) deleted.`
         );
         res.status(201).json({ message: "Message deleted successfully" });
       }
