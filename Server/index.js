@@ -33,6 +33,7 @@ app.get("/", (req, res) => {
 });
 
 // Get server status
+//todo add local user checking
 app.get("/downloadKey", (req, res) => {
   const filePath = path.join(__dirname, "secret.key");
   res.download(filePath, "secret.key", (err) => {
@@ -242,5 +243,12 @@ function initializeApp() {
     const key = crypto.randomBytes(32).toString("hex");
     fs.writeFileSync(keyPath, key);
     console.log("Generated and saved a new 256-bit key to secret.key");
+  }
+
+  // Create messages.json if it doesn't exist
+  const messagesPath = path.join(__dirname, "messages.json");
+  if (!fs.existsSync(messagesPath)) {
+    fs.writeFileSync(messagesPath, JSON.stringify([], null, 2));
+    console.log("Created messages.json with an empty array.");
   }
 }
