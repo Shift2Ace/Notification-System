@@ -1,19 +1,17 @@
-import { Text, View } from 'react-native'
-import { Link } from 'expo-router';
-
+import { View, StyleSheet } from "react-native";
+import ServerAddButton from "@/components/ServerAddButton";
+import ServerList from "@/components/ServerList";
 export default function Index() {
   return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: "center"
-      }}
-    >
-      <div>
-        
-      </div>
-      <Text>Server List</Text>
-      <Link href="/messages">message</Link>
+    <View style={styles.mainView}>
+      <ServerList />
+      <ServerAddButton />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  mainView: {
+    flex: 1,
+  }
+});
