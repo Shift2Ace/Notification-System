@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   FlatList,
   Text,
   StyleSheet,
   Pressable,
-  TouchableNativeFeedback,
   TouchableWithoutFeedback,
+  Animated,
+  Easing,
 } from "react-native";
-import * as FileSystem from "expo-file-system";
 import * as EventManager from "./EventManager";
 import Space from "./Space";
 import { useRouter } from "expo-router";
 import colorTable from "@/assets/colorTable";
+import { getDB } from "./database";
 
-const serverListUri = FileSystem.documentDirectory + "serverList.json";
 
 type serverListItem = {
   id: number;
@@ -24,25 +24,42 @@ type serverListItem = {
   key: string;
   lastMortify: number;
   status: number;
-  nonReadMessage: {
-    "0": number;
-    "1": number;
-    "2": number;
-    "3": number;
-  };
+  nonReadMessage0: number;
+  nonReadMessage1: number;
+  nonReadMessage2: number;
+  nonReadMessage3: number;
 };
 
 const ServerList = () => {
   const [serverList, setServerList] = useState([]);
   const [onSelect, setOnSelect] = useState(0);
 
+  const animation = useRef(new Animated.Value(0)).current;
+
+  const buttonAnimatedStyle = {
+    opacity: animation,
+
+    transform: [
+      {
+        translateY: animation.interpolate({
+          inputRange: [0, 1],
+          outputRange: [8, 0], // Slide up
+        }),
+      },
+    ],
+  };
+
   // Load server
   const loadServerList = async () => {
-    const fileInfo = await FileSystem.getInfoAsync(serverListUri);
-    if (fileInfo.exists) {
-      const content = await FileSystem.readAsStringAsync(serverListUri);
-      setServerList(JSON.parse(content));
-      console.log(content);
+    try {
+      const db = getDB();
+      const databaseResult = await db.getAllAsync(
+        "SELECT * FROM servers ORDER BY lastMortify DESC"
+      );
+
+      setServerList(databaseResult);
+    } catch (error) {
+      console.error("Failed to load servers from DB:", error);
     }
   };
 
@@ -61,6 +78,27 @@ const ServerList = () => {
   // Route to /messages
   const handleListItemPress = () => {
     router.push("/messages");
+  };
+
+  const handleLongPress = (id: number) => {
+    setOnSelect(id);
+    Animated.timing(animation, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.ease),
+    }).start();
+  };
+
+  const handleDeselect = () => {
+    Animated.timing(animation, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+      easing: Easing.in(Easing.ease),
+    }).start(() => {
+      setOnSelect(0);
+    });
   };
 
   // show to number of nonReadMessage
@@ -102,6 +140,7 @@ const ServerList = () => {
   // Layer of every message
   let renderItem = ({ item }: { item: serverListItem }) => (
     <View style={styles.itemContainer}>
+      {/* Status bar */}
       <View
         style={[
           styles.status,
@@ -113,49 +152,63 @@ const ServerList = () => {
           },
         ]}
       />
+      {/* Item content */}
       <Pressable
         style={({ pressed }) => [
           styles.itemContent,
           {
-            backgroundColor: pressed ? "rgb(234, 234, 234)" : "white",
+            backgroundColor:
+              pressed || onSelect === item.id ? "rgb(234, 234, 234)" : "white",
             marginLeft: pressed ? 3 : 0,
             marginRight: pressed ? 3 : 0,
           },
         ]}
         onPress={handleListItemPress}
-        onLongPress={() => setOnSelect(item.id)}
+        onLongPress={() => handleLongPress(item.id)}
       >
         <Text style={styles.alias}>{item.alias}</Text>
         <Text style={styles.host}>
           {item.host}:{item.port}
         </Text>
         <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-          {item.nonReadMessage[0] > 0 &&
-            nonReadMessageNumber(0, item.nonReadMessage[0])}
-          {item.nonReadMessage[1] > 0 &&
-            nonReadMessageNumber(1, item.nonReadMessage[1])}
-          {item.nonReadMessage[2] > 0 &&
-            nonReadMessageNumber(2, item.nonReadMessage[2])}
-          {item.nonReadMessage[3] > 0 &&
-            nonReadMessageNumber(3, item.nonReadMessage[3])}
+          {item.nonReadMessage0 > 0 &&
+            nonReadMessageNumber(0, item.nonReadMessage0)}
+          {item.nonReadMessage1 > 0 &&
+            nonReadMessageNumber(1, item.nonReadMessage1)}
+          {item.nonReadMessage2 > 0 &&
+            nonReadMessageNumber(2, item.nonReadMessage2)}
+          {item.nonReadMessage3 > 0 &&
+            nonReadMessageNumber(3, item.nonReadMessage3)}
         </View>
         {onSelect !== 0 && (
-          <TouchableWithoutFeedback onPress={() => setOnSelect(0)}>
+          <TouchableWithoutFeedback onPress={handleDeselect}>
             <View style={{ ...StyleSheet.absoluteFillObject }}></View>
           </TouchableWithoutFeedback>
         )}
+
         {onSelect === item.id && (
-          //todo add animation
-          <View style={{ flexDirection: "row" }}>
-            <Pressable
-              style={[styles.button, { backgroundColor: "rgb(59, 59, 59)" }]}
-            >
-              <Text style={{ color: "white" }}>Edit</Text>
-            </Pressable>
-            <Pressable style={[styles.button, { backgroundColor: "red" }]}>
-              <Text style={{ color: "white" }}>Remove</Text>
-            </Pressable>
-          </View>
+          <Animated.View
+            style={[styles.buttonSetContainer, buttonAnimatedStyle]}
+          >
+            <View style={[styles.buttonContainer]}>
+              <Pressable
+                style={[
+                  styles.button,
+                  { backgroundColor: "rgb(59, 59, 59)" },
+                  ,
+                ]}
+              >
+                <Text style={{ color: "white" }}>Edit</Text>
+              </Pressable>
+            </View>
+            <View style={[styles.buttonContainer]}>
+              <Pressable
+                style={[styles.button, { backgroundColor: "rgb(255, 0, 0)" }]}
+              >
+                <Text style={{ color: "white" }}>Remove</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
         )}
       </Pressable>
     </View>
@@ -165,7 +218,7 @@ const ServerList = () => {
   return (
     <>
       <View style={styles.container}>
-        <Pressable onPress={() => setOnSelect(0)}>
+        <Pressable onPress={handleDeselect}>
           <FlatList
             data={serverList}
             renderItem={renderItem}
@@ -230,12 +283,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   button: {
-    width: 80,
-    height: 40,
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 5,
-    marginRight: 5,
+  },
+  buttonSetContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+  },
+  buttonContainer: {
+    flex: 1,
+    margin: 5,
   },
 });
 

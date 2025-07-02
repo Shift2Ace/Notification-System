@@ -22,9 +22,9 @@ import * as EventManager from "./EventManager";
 
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import { getDB } from "./database";
 
 const { width, height } = Dimensions.get("window");
-const serverListUri = FileSystem.documentDirectory + "serverList.json";
 
 export default function ServerAddButton() {
   const padding = 30;
@@ -118,70 +118,72 @@ export default function ServerAddButton() {
     return ipRegex.test(host) || hostnameRegex.test(host);
   };
 
-  const handleSubmit = async () => {
-    if (formAlias === "" || formAlias == null) {
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Error: Alias cannot be empty", ToastAndroid.SHORT);
-      } else {
-        Alert.alert("Error", "Alias cannot be empty");
-      }
-      return;
+
+
+const handleSubmit = async () => {
+  if (formAlias === "" || formAlias == null) {
+    if (Platform.OS === "android") {
+      ToastAndroid.show("Error: Alias cannot be empty", ToastAndroid.SHORT);
+    } else {
+      Alert.alert("Error", "Alias cannot be empty");
     }
-    if (!isValidHost(formHost)) {
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Error: Invalid Host", ToastAndroid.SHORT);
-      } else {
-        Alert.alert("Error", "Invalid Host");
-      }
-      return;
+    return;
+  }
+
+  if (!isValidHost(formHost)) {
+    if (Platform.OS === "android") {
+      ToastAndroid.show("Error: Invalid Host", ToastAndroid.SHORT);
+    } else {
+      Alert.alert("Error", "Invalid Host");
     }
+    return;
+  }
 
-    const portNumber = parseInt(formPort, 10);
-
-    if (isNaN(portNumber) || portNumber < 0 || portNumber > 65535) {
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Error: Invalid Port", ToastAndroid.SHORT);
-      } else {
-        Alert.alert("Error", "Invalid Port");
-      }
-      return;
+  const portNumber = parseInt(formPort, 10);
+  if (isNaN(portNumber) || portNumber < 0 || portNumber > 65535) {
+    if (Platform.OS === "android") {
+      ToastAndroid.show("Error: Invalid Port", ToastAndroid.SHORT);
+    } else {
+      Alert.alert("Error", "Invalid Port");
     }
-    // Add to serverList.json
-    const nowTime = Date.now();
-    const newServer = {
-      id: nowTime,
-      alias: formAlias,
-      host: formHost,
-      port: portNumber,
-      key: formKey,
-      lastMortify: nowTime,
-      status: 0,
-      nonReadMessage: { 0: 0, 1: 0, 2: 0, 3: 0 },
-    };
+    return;
+  }
 
-    try {
-      // Check if file exists
-      const fileInfo = await FileSystem.getInfoAsync(serverListUri);
-      let serverList = [];
+  const nowTime = Date.now();
+  const db = getDB();
 
-      if (fileInfo.exists) {
-        const content = await FileSystem.readAsStringAsync(serverListUri);
-        serverList = JSON.parse(content);
-      }
+  try {
+    await db.runAsync(
+      `INSERT INTO servers (
+        id, alias, host, port, key, lastMortify, status,
+        nonReadMessage0, nonReadMessage1, nonReadMessage2, nonReadMessage3
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nowTime,
+        formAlias,
+        formHost,
+        portNumber,
+        formKey,
+        nowTime,
+        0, // status
+        0, // nonReadMessage0
+        0, // nonReadMessage1
+        0, // nonReadMessage2
+        0, // nonReadMessage3
+      ]
+    );
 
-      // Append new server
-      serverList.push(newServer);
-
-      // Save updated list
-      await FileSystem.writeAsStringAsync(
-        serverListUri,
-        JSON.stringify(serverList, null, 2)
-      );
-      EventManager.notifyServerListChanged();
-    } catch (error) {
-      console.error("Error saving server:", error);
+    EventManager.notifyServerListChanged();
+    if (Platform.OS === "android") {
+      ToastAndroid.show("Server added successfully", ToastAndroid.SHORT);
+    } else {
+      Alert.alert("Success", "Server added successfully");
     }
-  };
+  } catch (error) {
+    console.error("Error saving server to DB:", error);
+  }
+};
+
 
   const formAnimatedStyle = {
     right: animation.interpolate({
